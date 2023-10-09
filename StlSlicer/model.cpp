@@ -207,11 +207,15 @@ std::vector<mth::float2> Model::CalcSlice(mth::float3 plainNormal, float plainDi
 	for (std::size_t i = 0; i < m_vertices.size(); i += 3)
 	{
 		const mth::float3x3 transformMatrix = mth::float3x3::RotateUnitVector(plainNormal, mth::float3(0.0f, 1.0f, 0.0f));
-		const mth::float3 v[] = {
+		mth::float3 v[] = {
 			transformMatrix * m_vertices[i + 0].position - mth::float3(0.0f, plainDistFromOrigin, 0.0f),
 			transformMatrix * m_vertices[i + 1].position - mth::float3(0.0f, plainDistFromOrigin, 0.0f),
 			transformMatrix * m_vertices[i + 2].position - mth::float3(0.0f, plainDistFromOrigin, 0.0f)
 		};
+		for (int i = 0; i < 3; ++i)
+			if (0.0f == v[i].y)
+				v[i].y = std::numeric_limits<float>::min();
+
 		if (v[0].y * v[1].y < 0.0f)
 			slice.push_back(mth::float2(v[0].x, v[0].z) + mth::float2(v[1].x - v[0].x, v[1].z - v[0].z) * std::abs(v[0].y / (v[1].y - v[0].y)));
 		if (v[1].y * v[2].y < 0.0f)
