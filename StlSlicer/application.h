@@ -19,6 +19,7 @@ class Application
 	std::vector<mth::float2> m_slice;
 	float m_sliceScale;
 	ComPtr<ID2D1SolidColorBrush> m_brush;
+	int m_processorCount;
 
 private:
 	void PaintEvent();

@@ -24,6 +24,7 @@ public:
 
 	void OptimalViewing(mth::float3& center, float& distance) const;
 	std::vector<mth::float2> CalcSlice(mth::float3 plainNormal, float plainDistFromOrigin) const;
+	std::vector<mth::float2> CalcSlice(mth::float3 plainNormal, float plainDistFromOrigin, unsigned jobs) const;
 
 	inline const std::vector<Vertex>& Vertices() const { return m_vertices; }
 };

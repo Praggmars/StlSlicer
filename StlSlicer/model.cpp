@@ -1,5 +1,6 @@
 #include "model.h"
 #include <string>
+#include <future>
 
 static mth::float3 StlConvert(mth::float3 v)
 {
@@ -87,7 +88,7 @@ bool Model::LoadBin(const wchar_t* filename)
 	infile.read(header, sizeof(header));
 	unsigned faceCount = 0;
 	infile.read(reinterpret_cast<char*>(&faceCount), sizeof(faceCount));
-	
+
 	std::vector<Vertex> vertices;
 	vertices.reserve(3 * faceCount);
 	for (unsigned i = 0; i < faceCount; ++i)
@@ -157,7 +158,7 @@ void Model::Cube()
 		{ mth::float3( 1.0f,  1.0f,  1.0f), mth::float3( 0.0f,  0.0f,  1.0f) },
 		{ mth::float3(-1.0f, -1.0f,  1.0f), mth::float3( 0.0f,  0.0f,  1.0f) }
 		});
-	
+
 	//for (Vertex& v : m_vertices) v.position += mth::float3(10.0f, 100.0f, 300.0f);
 }
 
@@ -166,7 +167,7 @@ bool Model::Load(const wchar_t* filename)
 	std::ifstream infile(filename);
 	if (!infile.is_open())
 		return false;
-	
+
 	char solid[5];
 	infile.read(solid, sizeof(solid));
 	infile.close();
@@ -200,29 +201,86 @@ void Model::OptimalViewing(mth::float3& center, float& distance) const
 	}
 }
 
+static void CalculateTriangleSlice(std::vector<mth::float2>& outputContainer, const mth::float3x3& plainTransform, float plainDistFromOrigin, const Vertex vertices[3])
+{
+	mth::float3 v[] = {
+		plainTransform * vertices[0].position - mth::float3(0.0f, plainDistFromOrigin, 0.0f),
+		plainTransform * vertices[1].position - mth::float3(0.0f, plainDistFromOrigin, 0.0f),
+		plainTransform * vertices[2].position - mth::float3(0.0f, plainDistFromOrigin, 0.0f)
+	};
+	for (int i = 0; i < 3; ++i)
+		if (0.0f == v[i].y)
+			v[i].y = std::numeric_limits<float>::min();
+
+	if (v[0].y * v[1].y < 0.0f)
+		outputContainer.push_back(mth::float2(v[0].x, v[0].z) + mth::float2(v[1].x - v[0].x, v[1].z - v[0].z) * std::abs(v[0].y / (v[1].y - v[0].y)));
+	if (v[1].y * v[2].y < 0.0f)
+		outputContainer.push_back(mth::float2(v[1].x, v[1].z) + mth::float2(v[2].x - v[1].x, v[2].z - v[1].z) * std::abs(v[1].y / (v[2].y - v[1].y)));
+	if (v[2].y * v[0].y < 0.0f)
+		outputContainer.push_back(mth::float2(v[2].x, v[2].z) + mth::float2(v[0].x - v[2].x, v[0].z - v[2].z) * std::abs(v[2].y / (v[0].y - v[2].y)));
+}
+
 std::vector<mth::float2> Model::CalcSlice(mth::float3 plainNormal, float plainDistFromOrigin) const
 {
 	std::vector<mth::float2> slice;
+	slice.reserve(m_vertices.size() / 3 * 2);
+
+	const mth::float3x3 plainTransform = mth::float3x3::RotateUnitVector(plainNormal, mth::float3(0.0f, 1.0f, 0.0f));
 
 	for (std::size_t i = 0; i < m_vertices.size(); i += 3)
-	{
-		const mth::float3x3 transformMatrix = mth::float3x3::RotateUnitVector(plainNormal, mth::float3(0.0f, 1.0f, 0.0f));
-		mth::float3 v[] = {
-			transformMatrix * m_vertices[i + 0].position - mth::float3(0.0f, plainDistFromOrigin, 0.0f),
-			transformMatrix * m_vertices[i + 1].position - mth::float3(0.0f, plainDistFromOrigin, 0.0f),
-			transformMatrix * m_vertices[i + 2].position - mth::float3(0.0f, plainDistFromOrigin, 0.0f)
-		};
-		for (int i = 0; i < 3; ++i)
-			if (0.0f == v[i].y)
-				v[i].y = std::numeric_limits<float>::min();
-
-		if (v[0].y * v[1].y < 0.0f)
-			slice.push_back(mth::float2(v[0].x, v[0].z) + mth::float2(v[1].x - v[0].x, v[1].z - v[0].z) * std::abs(v[0].y / (v[1].y - v[0].y)));
-		if (v[1].y * v[2].y < 0.0f)
-			slice.push_back(mth::float2(v[1].x, v[1].z) + mth::float2(v[2].x - v[1].x, v[2].z - v[1].z) * std::abs(v[1].y / (v[2].y - v[1].y)));
-		if (v[2].y * v[0].y < 0.0f)
-			slice.push_back(mth::float2(v[2].x, v[2].z) + mth::float2(v[0].x - v[2].x, v[0].z - v[2].z) * std::abs(v[2].y / (v[0].y - v[2].y)));
-	}
+		CalculateTriangleSlice(slice, plainTransform, plainDistFromOrigin, m_vertices.data() + i);
 
 	return slice;
+}
+
+std::vector<mth::float2> Model::CalcSlice(mth::float3 plainNormal, float plainDistFromOrigin, unsigned jobs) const
+{
+	if (jobs < 2)
+		return CalcSlice(plainNormal, plainDistFromOrigin);
+
+	class Worker
+	{
+		const mth::float3x3& m_plainTransform;
+		const float m_plainDistFromOrigin;
+		std::vector<mth::float2> m_slice;
+		std::future<void> m_future;
+
+	public:
+		Worker(const mth::float3x3& plainTransform, const float plainDistFromOrigin)
+			: m_plainTransform(plainTransform)
+			, m_plainDistFromOrigin(plainDistFromOrigin) {}
+
+		void Run(const Vertex* vertices, unsigned count)
+		{
+			m_slice.reserve(count * 2);
+			m_future = std::async([this](const Vertex* vertices, unsigned count) {
+				for (unsigned i = 0; i < count; ++i)
+					CalculateTriangleSlice(m_slice, m_plainTransform, m_plainDistFromOrigin, &vertices[i * 3]);
+				}, vertices, count);
+		}
+
+		void GetSlices(std::vector<mth::float2>& outputContainer)
+		{
+			m_future.wait();
+			outputContainer.insert(outputContainer.end(), m_slice.begin(), m_slice.end());
+		}
+	};
+
+	std::size_t jobWorkCount = (m_vertices.size() / 3 + jobs - 1) / jobs;
+	const mth::float3x3 plainTransform = mth::float3x3::RotateUnitVector(plainNormal, mth::float3(0.0f, 1.0f, 0.0f));
+	std::vector<Worker> workers;
+	workers.reserve(jobs);
+
+	for (unsigned i = 0; i < jobs; ++i)
+	{
+		const Vertex* vertices = &m_vertices[3 * i * jobWorkCount];
+		unsigned count = std::min(jobWorkCount, m_vertices.size() - i * jobWorkCount);
+		workers.emplace_back(plainTransform, plainDistFromOrigin).Run(vertices, count);
+	}
+
+	std::vector<mth::float2> allSlice;
+	allSlice.reserve(m_vertices.size() / 3 * 2);
+	for (Worker& w : workers)
+		w.GetSlices(allSlice);
+	return allSlice;
 }

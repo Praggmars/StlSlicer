@@ -172,7 +172,7 @@ void Application::CalcSlice()
 	const mth::float3 normal = ((mth::float3x3)transform * mth::float3(0.0f, 1.0f, 0.0f)).Normalized();
 	const mth::float3 point(transform(0, 3), transform(1, 3), transform(2, 3));
 	const float distance = normal.Dot(point);
-	m_slice = m_model.CalcSlice(normal, distance);
+	m_slice = m_model.CalcSlice(normal, distance, m_processorCount);
 
 	if (!m_slice.empty())
 	{
@@ -185,7 +185,9 @@ Application::Application()
 	: m_mainWindow{}
 	, m_prevCursor{}
 	, m_cameraDistance{}
-	, m_plainShowing{ true } {}
+	, m_plainShowing{ true }
+	, m_sliceScale{}
+	, m_processorCount{} {}
 
 Application::~Application()
 {
@@ -211,6 +213,10 @@ void Application::Init(const wchar_t* title, int width, int height)
 		[](HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)->LRESULT {
 			return reinterpret_cast<Application*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA))->MessageHandler(msg, wparam, lparam);
 		})));
+
+	SYSTEM_INFO sysinfo;
+	GetSystemInfo(&sysinfo);
+	m_processorCount = sysinfo.dwNumberOfProcessors;
 
 	m_graphics.Init(m_mainWindow);
 	m_model.Cube();
