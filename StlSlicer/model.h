@@ -22,7 +22,7 @@ public:
 	void Cube();
 	bool Load(const wchar_t* filename);
 
-	void OptimalViewing(mth::float3& center, float& distance) const;
+	void OptimalPositioning(mth::float3& offset, float& scale) const;
 	std::vector<mth::float2> CalcSlice(mth::float3 plainNormal, float plainDistFromOrigin) const;
 	std::vector<mth::float2> CalcSlice(mth::float3 plainNormal, float plainDistFromOrigin, unsigned jobs) const;
 

@@ -13,11 +13,12 @@ class Application
 	mth::float3 m_center;
 	mth::float2 m_cameraRotation;
 	float m_cameraDistance;
-	mth::float4x4 m_modelTransform;
-	mth::float4x4 m_plainTransform;
+	float m_modelScale;
+	mth::float3 m_modelOffset;
+	mth::float3x3 m_plainRotation;
+	mth::float3 m_plainOffset;
 	bool m_plainShowing;
 	std::vector<mth::float2> m_slice;
-	float m_sliceScale;
 	ComPtr<ID2D1SolidColorBrush> m_brush;
 	int m_processorCount;
 

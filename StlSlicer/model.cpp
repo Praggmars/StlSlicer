@@ -158,8 +158,6 @@ void Model::Cube()
 		{ mth::float3( 1.0f,  1.0f,  1.0f), mth::float3( 0.0f,  0.0f,  1.0f) },
 		{ mth::float3(-1.0f, -1.0f,  1.0f), mth::float3( 0.0f,  0.0f,  1.0f) }
 		});
-
-	//for (Vertex& v : m_vertices) v.position += mth::float3(10.0f, 100.0f, 300.0f);
 }
 
 bool Model::Load(const wchar_t* filename)
@@ -176,12 +174,12 @@ bool Model::Load(const wchar_t* filename)
 	return LoadBin(filename);
 }
 
-void Model::OptimalViewing(mth::float3& center, float& distance) const
+void Model::OptimalPositioning(mth::float3& offset, float& scale) const
 {
 	if (m_vertices.empty())
 	{
-		center = 0.0f;
-		distance = 1.0f;
+		offset = 0.0f;
+		scale = 1.0f;
 	}
 	else
 	{
@@ -196,8 +194,8 @@ void Model::OptimalViewing(mth::float3& center, float& distance) const
 			maxCoords.y = std::max(maxCoords.y, v.position.y);
 			maxCoords.z = std::max(maxCoords.z, v.position.z);
 		}
-		center = (maxCoords - minCoords) * 0.5f + minCoords;
-		distance = (maxCoords - minCoords).Length();
+		offset = (maxCoords - minCoords) * 0.5f + minCoords;
+		scale = 1.0f / (maxCoords - minCoords).Length();
 	}
 }
 

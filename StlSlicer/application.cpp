@@ -9,7 +9,7 @@ void Application::PaintEvent()
 
 	ShaderData shaderData;
 	shaderData.eye = mth::float3x3::Rotation(m_cameraRotation.x, m_cameraRotation.y, 0.0f) * mth::float3(0.0f, 0.0f, -m_cameraDistance) + m_center;
-	shaderData.worldMatrix = m_modelTransform;
+	shaderData.worldMatrix = mth::float4x4::ScalingTranslation(mth::float3(m_modelScale), -m_modelOffset * m_modelScale);
 	shaderData.cameraMatrix =
 		mth::float4x4::PerspectiveFOV(mth::pi * 0.25f, static_cast<float>(m_resolution.x) * 0.5f / static_cast<float>(m_resolution.y), 0.1f, 1000.0f) *
 		mth::float4x4::RotationCamera(shaderData.eye, mth::float3(m_cameraRotation.x, m_cameraRotation.y, 0.0f));
@@ -18,18 +18,19 @@ void Application::PaintEvent()
 
 	if (m_plainShowing)
 	{
-		shaderData.worldMatrix = m_plainTransform;
+		shaderData.worldMatrix = mth::float4x4(m_plainRotation);
+		shaderData.worldMatrix(0, 3) = m_plainOffset.x;
+		shaderData.worldMatrix(1, 3) = m_plainOffset.y;
+		shaderData.worldMatrix(2, 3) = m_plainOffset.z;
 		shaderData.ambient = 1.0f;
 		m_graphics.RenderPlain(shaderData);
 
-		const mth::float3 offset3D = mth::float3(m_modelTransform(0, 3), m_modelTransform(1, 3), m_modelTransform(2, 3)) * (mth::float3x3)m_plainTransform;
-		const mth::float2 offset1(offset3D.x, offset3D.z);
 		for (std::size_t i = 1; i < m_slice.size(); i += 2)
 		{
 			const float scale = min(static_cast<float>(m_resolution.x) * 0.5f, static_cast<float>(m_resolution.y));
-			const mth::float2 offset2 = mth::float2(static_cast<float>(m_resolution.x) * 0.75f, static_cast<float>(m_resolution.y) * 0.5f);
-			const mth::float2 p1 = offset2 + (m_slice[i - 1] + offset1) * scale;
-			const mth::float2 p2 = offset2 + (m_slice[i - 0] + offset1) * scale;
+			const mth::float2 offset = mth::float2(static_cast<float>(m_resolution.x) * 0.75f, static_cast<float>(m_resolution.y) * 0.5f);
+			const mth::float2 p1 = offset + m_slice[i - 1] * scale;
+			const mth::float2 p2 = offset + m_slice[i - 0] * scale;
 			m_graphics.Context2D()->DrawLine(D2D1::Point2F(p1.x, p1.y), D2D1::Point2F(p2.x, p2.y), m_brush.Get(), 2.0f);
 		}
 	}
@@ -106,12 +107,12 @@ void Application::MouseMoveEvent(int x, int y, WPARAM flags)
 		if (flags & (MK_LBUTTON | MK_RBUTTON))
 			camRot = mth::float3x3::Rotation(m_cameraRotation.x, m_cameraRotation.y, 0.0f);
 		if (flags & MK_RBUTTON)
-			m_plainTransform = mth::float4x4::Translation(camRot * (mth::float3(delta.x, -delta.y, 0.0f) * sensitivity * m_cameraDistance * 0.1f)) * m_plainTransform;
+			m_plainOffset += camRot * (mth::float3(delta.x, -delta.y, 0.0f) * sensitivity * m_cameraDistance * 0.1f);
 		if (flags & MK_LBUTTON)
-			m_plainTransform = 
-			mth::float4x4::RotationNormal(camRot * mth::float3(-1.0f, 0.0f, 0.0f), static_cast<float>(delta.y) * sensitivity) *
-			mth::float4x4::RotationNormal(camRot * mth::float3(0.0f, -1.0f, 0.0f), static_cast<float>(delta.x) * sensitivity) *
-			m_plainTransform;
+			m_plainRotation = 
+				mth::float3x3::RotationNormal(camRot * mth::float3(-1.0f, 0.0f, 0.0f), static_cast<float>(delta.y) * sensitivity) *
+				mth::float3x3::RotationNormal(camRot * mth::float3(0.0f, -1.0f, 0.0f), static_cast<float>(delta.x) * sensitivity) *
+				m_plainRotation;
 
 		if (flags & (MK_LBUTTON | MK_RBUTTON))
 			CalcSlice();
@@ -155,29 +156,26 @@ void Application::KeyUpEvent(WPARAM key)
 
 void Application::SetViewForModel()
 {
-	float distance = 0.0f;
-	mth::float3 center;
-	m_model.OptimalViewing(center, distance);
+	m_model.OptimalPositioning(m_modelOffset, m_modelScale);
 	m_center = 0.0f;
-	m_cameraDistance = 1.0f;
-	m_modelTransform = mth::float4x4::ScalingTranslation(mth::float3(1.0f / distance), -center / distance);
-	m_plainTransform = mth::float4x4::Identity();
-	m_sliceScale = 1.0f / distance;
+	m_cameraDistance = 2.0f;
+	m_plainRotation = mth::float3x3::Identity();
+	m_plainOffset = 0.0f;
 	CalcSlice();
 }
 
 void Application::CalcSlice()
 {
-	const mth::float4x4 transform = m_modelTransform.Inverse() * m_plainTransform;
-	const mth::float3 normal = ((mth::float3x3)transform * mth::float3(0.0f, 1.0f, 0.0f)).Normalized();
-	const mth::float3 point(transform(0, 3), transform(1, 3), transform(2, 3));
-	const float distance = normal.Dot(point);
+	const mth::float3 normal = m_plainRotation * mth::float3(0.0f, 1.0f, 0.0f);
+	const float distance = normal.Dot(m_plainOffset / m_modelScale + m_modelOffset);
 	m_slice = m_model.CalcSlice(normal, distance, m_processorCount);
 
-	if (!m_slice.empty())
+	for (mth::float2& p : m_slice)
 	{
-		for (mth::float2& v : m_slice)
-			v *= m_sliceScale;
+		const mth::float3 offset = mth::float3x3::RotateUnitVector(normal, mth::float3(0.0f, 1.0f, 0.0f)) * m_modelOffset;
+		p.x -= offset.x;
+		p.y -= offset.z;
+		p *= m_modelScale;
 	}
 }
 
@@ -185,8 +183,8 @@ Application::Application()
 	: m_mainWindow{}
 	, m_prevCursor{}
 	, m_cameraDistance{}
+	, m_modelScale{}
 	, m_plainShowing{ true }
-	, m_sliceScale{}
 	, m_processorCount{} {}
 
 Application::~Application()
