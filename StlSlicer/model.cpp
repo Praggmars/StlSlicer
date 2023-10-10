@@ -271,8 +271,10 @@ std::vector<mth::float2> Model::CalcSlice(mth::float3 plainNormal, float plainDi
 
 	for (unsigned i = 0; i < jobs; ++i)
 	{
+		if (m_vertices.size() <= i * jobWorkCount * 3)
+			break;
 		const Vertex* vertices = &m_vertices[3 * i * jobWorkCount];
-		unsigned count = std::min(jobWorkCount, m_vertices.size() - i * jobWorkCount);
+		unsigned count = std::min(jobWorkCount, m_vertices.size() / 3 - i * jobWorkCount);
 		workers.emplace_back(plainTransform, plainDistFromOrigin).Run(vertices, count);
 	}
 
